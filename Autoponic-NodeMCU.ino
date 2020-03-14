@@ -8,20 +8,20 @@
 #define WIFI_SSID "Redmi"
 #define WIFI_PASSWORD "hahahaha"
 
-#define TDS_TAG = "TDS";
-#define SETPOINT_TAG = "TDS_setpoint";
-#define TEMPERATURE_TAG = "temperature";
+#define TDS_TAG "TDS"
+#define SETPOINT_TAG "setpoint"
+#define TEMPERATURE_TAG "temperature"
 
 SoftwareSerial s(D6, D5);
 
-const char startMarker = '^';
+const char startMarker = '|';
 const char endMarker = '~';
 
 const byte numChars = 960;
 char receivedChars[numChars];
 boolean newData = false;
 
-int tds_value, temperature, setPoint;
+float currentSetPoint = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -32,8 +32,9 @@ void setup() {
 
 void loop() {
   if(WiFi.status() != WL_CONNECTED) connection();
+  loadDataFromFirebase(currentSetPoint, startMarker, endMarker);
   receiveDataFromArduino(startMarker, endMarker);
-//  loadDataFromFirebase(startMarker, endMarker);
+  Serial.println(".");
   delay(1000);
 }
 
@@ -46,13 +47,6 @@ void connection() {
   Serial.println();
   Serial.print("connected: ");
   Serial.println(WiFi.localIP());
-}
-
-void logValue() {
-  Serial.print("TDS: ");
-  Serial.println(tds_value);
-  Serial.print("Temperature: ");
-  Serial.println(temperature);
 }
 
 void receiveDataFromArduino(char startMarker, char endMarker) {
@@ -106,15 +100,18 @@ void processNewData() {
   }
 }
 
-void loadDataFromFirebase(char startMarker, char endMarker) {
-  float setPointFirebase = Firebase.getFloat("TDS_setpoint");
-  transmitDataToArduino(setPointFirebase, startMarker, endMarker);
+void loadDataFromFirebase(float& currentSetPoint, char startMarker, char endMarker) {
+  float setPointFirebase = Firebase.getFloat(SETPOINT_TAG);
+  if(setPointFirebase != currentSetPoint) {
+    transmitDataToArduino(setPointFirebase, startMarker, endMarker);
+    currentSetPoint = setPointFirebase;
+  }
 }
 
 void updateDataToFirebase(JsonObject& obj) {
-  Firebase.setFloat("TDS", obj["TDS"]);
-  Firebase.setFloat("temperature", obj["temperature"]);
-//  Firebase.setFloat("TDS_setpoint", obj["TDS_setpoint"]);
+  Firebase.setFloat(TDS_TAG, obj[TDS_TAG]);
+  Firebase.setFloat(TEMPERATURE_TAG, obj[TEMPERATURE_TAG]);
+//  Firebase.setFloat(SETPOINT_TAG, obj[SETPOINT_TAG]);
 }
 
 void transmitDataToArduino(float setPoint, char startMarker, char endMarker) {
@@ -123,11 +120,16 @@ void transmitDataToArduino(float setPoint, char startMarker, char endMarker) {
   
   DynamicJsonBuffer jb;
   JsonObject& obj = jb.createObject();
-  obj["setPoint"] = setPoint;
+  obj[SETPOINT_TAG] = setPoint;
   obj.printTo(json);
   
   transmittedValue = startMarker + json + endMarker;
+  
+  Serial.println("-----------TRANSMITING data to Arduino-----------");
+  Serial.println(transmittedValue);
+  Serial.println("----------------END OF TRANSMITING---------------");
+  
   s.print(transmittedValue);
-  json.remove(0, json.length());
-  transmittedValue.remove(0, transmittedValue.length());
+//  json.remove(0, json.length());
+//  transmittedValue.remove(0, transmittedValue.length());
 }
